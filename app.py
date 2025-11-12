@@ -250,7 +250,7 @@ if __name__ == '__main__':
     
     # Obtener configuración desde variables de entorno
     debug_mode = os.getenv("DEBUG_MODE", "False").lower() == "true"
-    port = int(os.getenv("PORT", "5000"))
+    port = int(os.getenv("PORT", "5001"))
     
     print("\n" + "="*60)
     print(f"Servidor web iniciado en http://localhost:{port}")
