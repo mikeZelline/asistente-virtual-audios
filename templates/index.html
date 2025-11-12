@@ -253,47 +253,36 @@
         }
 
         // Función para verificar y solicitar permisos del micrófono
+        // Usa getUserMedia directamente para que el navegador muestre el diálogo de permisos
         async function requestMicrophonePermission() {
             try {
-                // Verificar si la API de Permissions está disponible
-                if (navigator.permissions) {
-                    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-                    
-                    if (permissionStatus.state === 'granted') {
-                        return true;
-                    } else if (permissionStatus.state === 'prompt') {
-                        // El navegador pedirá permiso automáticamente al usar getUserMedia
-                        return true;
-                    } else if (permissionStatus.state === 'denied') {
-                        alert('El permiso del micrófono está denegado. Por favor, habilítalo en la configuración de tu navegador.');
-                        return false;
-                    }
+                // Verificar que getUserMedia esté disponible
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert('Tu navegador no soporta acceso al micrófono. Por favor, usa un navegador moderno como Chrome, Edge o Firefox.');
+                    return false;
                 }
                 
-                // Si no está disponible la API de Permissions, intentar con getUserMedia
-                // Esto también solicitará permiso si es necesario
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    // Detener el stream inmediatamente, solo queríamos verificar el permiso
-                    stream.getTracks().forEach(track => track.stop());
-                    return true;
-                } catch (error) {
-                    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                        alert('Se necesita permiso para usar el micrófono. Por favor, permite el acceso al micrófono cuando se te solicite.');
-                        return false;
-                    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-                        alert('No se encontró ningún micrófono. Por favor, conecta un micrófono e intenta de nuevo.');
-                        return false;
-                    } else {
-                        console.error('Error al solicitar permiso del micrófono:', error);
-                        alert('Error al acceder al micrófono. Por favor, verifica la configuración de tu navegador.');
-                        return false;
-                    }
-                }
-            } catch (error) {
-                console.error('Error al verificar permisos:', error);
-                // Intentar de todas formas, el navegador pedirá permiso si es necesario
+                // Usar getUserMedia directamente - esto mostrará el diálogo del navegador automáticamente
+                // si el permiso no está otorgado
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Detener el stream inmediatamente, solo queríamos verificar/solicitar el permiso
+                stream.getTracks().forEach(track => track.stop());
+                
                 return true;
+            } catch (error) {
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    // El usuario denegó el permiso en el diálogo del navegador
+                    alert('Se necesita permiso para usar el micrófono. Por favor, recarga la página y permite el acceso cuando se te solicite.');
+                    return false;
+                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    alert('No se encontró ningún micrófono. Por favor, conecta un micrófono e intenta de nuevo.');
+                    return false;
+                } else {
+                    console.error('Error al solicitar permiso del micrófono:', error);
+                    alert('Error al acceder al micrófono. Por favor, verifica la configuración de tu navegador.');
+                    return false;
+                }
             }
         }
 
