@@ -348,29 +348,112 @@
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             
-            recognition.lang = 'es-ES';
-            recognition.continuous = false;
-            recognition.interimResults = false;
+            // Configuración mejorada para mejor reconocimiento
+            recognition.lang = 'es-CO'; // Español de Colombia (mejor para contratación pública colombiana)
+            recognition.continuous = false; // Detenerse automáticamente después de una pausa
+            recognition.interimResults = true; // Mostrar resultados intermedios para mejor precisión
+            recognition.maxAlternatives = 3; // Obtener múltiples alternativas para elegir la mejor
             
             recordButton.style.display = 'none';
             recordingStatus.style.display = 'flex';
             userInput.disabled = true;
             sendButton.disabled = true;
             
+            let finalTranscript = '';
+            let interimTranscript = '';
+            let recognitionStartTime = null;
+            const INITIAL_DELAY = 300; // Esperar 1 segundo antes de procesar resultados
+            
             recognition.onstart = () => {
                 isRecording = true;
+                finalTranscript = '';
+                interimTranscript = '';
+                recognitionStartTime = Date.now();
+                console.log('Reconocimiento iniciado - esperando ' + INITIAL_DELAY + 'ms antes de procesar audio...');
+                
+                // Actualizar mensaje para indicar que debe esperar
+                const statusText = recordingStatus.querySelector('span:nth-child(2)');
+                if (statusText) {
+                    statusText.textContent = 'Preparando... (espera un momento antes de hablar)';
+                    setTimeout(() => {
+                        if (isRecording && statusText) {
+                            statusText.textContent = 'Grabando...';
+                        }
+                    }, INITIAL_DELAY);
+                }
             };
             
             recognition.onresult = async (event) => {
-                const transcript = event.results[0][0].transcript;
-                console.log("TRANSCRIPT: ");
-                console.log(transcript);
-                if (transcript.trim()) {
+                // Ignorar resultados durante el delay inicial
+                const elapsed = Date.now() - recognitionStartTime;
+                if (elapsed < INITIAL_DELAY) {
+                    console.log(`Ignorando resultado inicial (${elapsed}ms < ${INITIAL_DELAY}ms)`);
+                    return;
+                }
+                
+                // Combinar todos los resultados para mejor precisión
+                let interim = '';
+                let final = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    const confidence = event.results[i][0].confidence || 0;
+                    
+                    // Si es resultado final, agregarlo a final
+                    if (event.results[i].isFinal) {
+                        final += transcript + ' ';
+                        // Si hay múltiples alternativas y la primera no es muy confiable, intentar con otras
+                        if (confidence < 0.7 && event.results[i].length > 1) {
+                            // Probar con la segunda alternativa si está disponible
+                            const altTranscript = event.results[i][1]?.transcript;
+                            if (altTranscript) {
+                                console.log(`Alternativa considerada: "${altTranscript}" (confianza: ${event.results[i][1]?.confidence || 'N/A'})`);
+                            }
+                        }
+                    } else {
+                        // Resultado intermedio
+                        interim += transcript + ' ';
+                    }
+                }
+                
+                interimTranscript = interim;
+                finalTranscript += final;
+                
+                // Mostrar resultado intermedio en consola para debug
+                if (interim.trim()) {
+                    console.log("Resultado intermedio:", interim.trim());
+                }
+                
+                // Si hay resultado final, procesarlo
+                if (final.trim()) {
+                    console.log("Resultado final:", final.trim());
+                    console.log("Confianza:", event.results[event.results.length - 1][0].confidence);
+                }
+            };
+            
+            recognition.onend = () => {
+                // Cuando termine, usar el transcript final completo
+                let completeTranscript = finalTranscript.trim();
+                
+                // Si no hay transcript final pero hay intermedio, usar el intermedio
+                if (!completeTranscript && interimTranscript.trim()) {
+                    completeTranscript = interimTranscript.trim();
+                    console.log("Usando transcript intermedio:", completeTranscript);
+                }
+                
+                console.log("TRANSCRIPT COMPLETO:", completeTranscript);
+                
+                if (completeTranscript) {
                     // Agregar mensaje del usuario con el texto transcrito
-                    addMessage(transcript, true);
+                    addMessage(completeTranscript, true);
                     
                     // Enviar pregunta al chat (sin audio)
-                    await sendChatMessage(transcript, false);
+                    sendChatMessage(completeTranscript, false).then(() => {
+                        stopRecording();
+                    });
+                } else {
+                    // Si no hay transcript, solo detener
+                    stopRecording();
                 }
             };
             
@@ -383,10 +466,6 @@
                     errorMsg = 'Permiso de micrófono denegado. Por favor, permite el acceso al micrófono en la configuración de tu navegador.';
                 }
                 addMessage(errorMsg, false);
-                stopRecording();
-            };
-            
-            recognition.onend = () => {
                 stopRecording();
             };
             
@@ -404,7 +483,12 @@
         // Función para detener grabación
         function stopRecording() {
             if (window.currentRecognition && isRecording) {
-                window.currentRecognition.stop();
+                try {
+                    window.currentRecognition.stop();
+                } catch (e) {
+                    // Ignorar errores si ya se detuvo
+                    console.log('El reconocimiento ya estaba detenido');
+                }
             }
             isRecording = false;
             recordButton.style.display = 'flex';
