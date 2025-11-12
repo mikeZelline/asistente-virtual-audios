@@ -252,11 +252,62 @@
             }
         }
 
+        // Función para verificar y solicitar permisos del micrófono
+        async function requestMicrophonePermission() {
+            try {
+                // Verificar si la API de Permissions está disponible
+                if (navigator.permissions) {
+                    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+                    
+                    if (permissionStatus.state === 'granted') {
+                        return true;
+                    } else if (permissionStatus.state === 'prompt') {
+                        // El navegador pedirá permiso automáticamente al usar getUserMedia
+                        return true;
+                    } else if (permissionStatus.state === 'denied') {
+                        alert('El permiso del micrófono está denegado. Por favor, habilítalo en la configuración de tu navegador.');
+                        return false;
+                    }
+                }
+                
+                // Si no está disponible la API de Permissions, intentar con getUserMedia
+                // Esto también solicitará permiso si es necesario
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    // Detener el stream inmediatamente, solo queríamos verificar el permiso
+                    stream.getTracks().forEach(track => track.stop());
+                    return true;
+                } catch (error) {
+                    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                        alert('Se necesita permiso para usar el micrófono. Por favor, permite el acceso al micrófono cuando se te solicite.');
+                        return false;
+                    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                        alert('No se encontró ningún micrófono. Por favor, conecta un micrófono e intenta de nuevo.');
+                        return false;
+                    } else {
+                        console.error('Error al solicitar permiso del micrófono:', error);
+                        alert('Error al acceder al micrófono. Por favor, verifica la configuración de tu navegador.');
+                        return false;
+                    }
+                }
+            } catch (error) {
+                console.error('Error al verificar permisos:', error);
+                // Intentar de todas formas, el navegador pedirá permiso si es necesario
+                return true;
+            }
+        }
+
         // Función para iniciar grabación con Web Speech API
-        function startRecording() {
+        async function startRecording() {
             // Verificar si el navegador soporta Web Speech API
             if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
                 alert('Tu navegador no soporta reconocimiento de voz. Por favor, usa Chrome, Edge o Safari.');
+                return;
+            }
+            
+            // Solicitar permiso del micrófono antes de iniciar
+            const hasPermission = await requestMicrophonePermission();
+            if (!hasPermission) {
                 return;
             }
             
@@ -295,7 +346,7 @@
                 if (event.error === 'no-speech') {
                     errorMsg = 'No se detectó habla. Intenta de nuevo.';
                 } else if (event.error === 'not-allowed') {
-                    errorMsg = 'Permiso de micrófono denegado.';
+                    errorMsg = 'Permiso de micrófono denegado. Por favor, permite el acceso al micrófono en la configuración de tu navegador.';
                 }
                 addMessage(errorMsg, false);
                 stopRecording();
@@ -305,10 +356,15 @@
                 stopRecording();
             };
             
-            recognition.start();
-            
-            // Guardar referencia para poder detenerla
-            window.currentRecognition = recognition;
+            try {
+                recognition.start();
+                // Guardar referencia para poder detenerla
+                window.currentRecognition = recognition;
+            } catch (error) {
+                console.error('Error al iniciar reconocimiento:', error);
+                addMessage('Error al iniciar la grabación. Por favor, intenta de nuevo.', false);
+                stopRecording();
+            }
         }
         
         // Función para detener grabación
