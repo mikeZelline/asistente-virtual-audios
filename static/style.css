@@ -130,10 +130,13 @@ body {
 #chatForm {
     display: flex;
     gap: 10px;
+    align-items: center;
+    flex-wrap: nowrap;
 }
 
 #userInput {
     flex: 1;
+    min-width: 0;
     padding: 14px 18px;
     border: 2px solid #e0e0e0;
     border-radius: 25px;
@@ -149,6 +152,10 @@ body {
 #sendButton {
     width: 50px;
     height: 50px;
+    min-width: 50px;
+    min-height: 50px;
+    max-width: 50px;
+    max-height: 50px;
     border: none;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -158,6 +165,14 @@ body {
     align-items: center;
     justify-content: center;
     transition: transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+#sendButton svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 #sendButton:hover {
@@ -178,6 +193,10 @@ body {
 .record-button {
     width: 50px;
     height: 50px;
+    min-width: 50px;
+    min-height: 50px;
+    max-width: 50px;
+    max-height: 50px;
     border: none;
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     color: white;
@@ -187,6 +206,14 @@ body {
     align-items: center;
     justify-content: center;
     transition: transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.record-button svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 .record-button:hover {
@@ -383,14 +410,35 @@ body {
         max-width: 85%;
     }
     
-    .record-button {
-        width: 45px;
-        height: 45px;
+    /* Mantener mismo tamaño para ambos botones en mobile */
+    .record-button,
+    #sendButton {
+        width: 48px;
+        height: 48px;
+        min-width: 48px;
+        min-height: 48px;
+        max-width: 48px;
+        max-height: 48px;
+    }
+    
+    .record-button svg,
+    #sendButton svg {
+        width: 22px;
+        height: 22px;
     }
     
     .recording-status {
         font-size: 12px;
         padding: 8px;
+    }
+    
+    #chatForm {
+        gap: 8px;
+    }
+    
+    #userInput {
+        padding: 12px 16px;
+        font-size: 14px;
     }
 }
 
