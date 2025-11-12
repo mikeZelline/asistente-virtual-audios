@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente Virtual Contratación Pública</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-content">
+                <div>
+                    <h1>💬 Asistente Virtual de Contratación Pública</h1>
+                    <p>Tu asistente experto en SECOP y contratación pública colombiana</p>
+                </div>
+                <a href="/logout" class="logout-button">Cerrar Sesión</a>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot-message">
+                <div class="message-content">
+                    ¡Hola! Soy tu asistente virtual especializado en contratación pública y el SECOP. Pregúntame lo que necesites saber.
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-input-container">
+            <form id="chatForm">
+                <input 
+                    type="text" 
+                    id="userInput" 
+                    placeholder="Escribe tu pregunta aquí..." 
+                    autocomplete="off"
+                >
+                <button type="button" id="recordButton" class="record-button" title="Grabar audio">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                </button>
+                <button type="submit" id="sendButton">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                    </svg>
+                </button>
+            </form>
+            <div id="recordingStatus" class="recording-status" style="display: none;">
+                <span class="recording-dot"></span>
+                <span>Grabando...</span>
+                <button id="stopRecordingButton" class="stop-recording-button">Detener</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const chatForm = document.getElementById('chatForm');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+        const recordButton = document.getElementById('recordButton');
+        const stopRecordingButton = document.getElementById('stopRecordingButton');
+        const recordingStatus = document.getElementById('recordingStatus');
+        
+        let isRecording = false;
+
+        // Variable global para controlar el audio actual
+        let currentAudioMessageDiv = null;
+        let stopAudioButton = null;
+
+        // Función para agregar mensaje al chat
+        function addMessage(message, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            
+            // Contenedor para el texto
+            const textDiv = document.createElement('div');
+            textDiv.textContent = message;
+            messageContent.appendChild(textDiv);
+            
+            // Si es mensaje del bot, agregar botón de pausa
+            if (!isUser && 'speechSynthesis' in window) {
+                const audioControlsDiv = document.createElement('div');
+                audioControlsDiv.className = 'audio-controls';
+                audioControlsDiv.style.marginTop = '8px';
+                audioControlsDiv.style.display = 'flex';
+                audioControlsDiv.style.alignItems = 'center';
+                audioControlsDiv.style.gap = '8px';
+                
+                stopAudioButton = document.createElement('button');
+                stopAudioButton.className = 'stop-audio-button';
+                stopAudioButton.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                        <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+                        <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+                    </svg>
+                `;
+                stopAudioButton.title = 'Pausar audio';
+                stopAudioButton.style.display = 'none'; // Oculto inicialmente
+                
+                stopAudioButton.addEventListener('click', () => {
+                    window.speechSynthesis.cancel();
+                    if (stopAudioButton) {
+                        stopAudioButton.style.display = 'none';
+                    }
+                    currentAudioMessageDiv = null;
+                });
+                
+                audioControlsDiv.appendChild(stopAudioButton);
+                messageContent.appendChild(audioControlsDiv);
+                
+                // Guardar referencia al mensaje actual
+                currentAudioMessageDiv = messageDiv;
+            }
+            
+            messageDiv.appendChild(messageContent);
+            chatMessages.appendChild(messageDiv);
+            
+            // Scroll al final
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Si es mensaje del bot, reproducir audio automáticamente
+            if (!isUser && 'speechSynthesis' in window) {
+                speakText(message, stopAudioButton);
+            }
+        }
+        
+        // ===== CONFIGURACIÓN DE VOZ =====
+        // Cambia este número (0, 1, 2, etc.) para seleccionar la voz
+        // Este número corresponde a la POSICIÓN en la lista de voces en español disponibles
+        const VOZ_SELECCIONADA = 1; // 0 = primera voz en español, 1 = segunda, etc.
+        
+        // Array de referencia (solo para documentación - no se usa en la selección)
+        // Las voces se seleccionan por índice directamente del navegador
+        const VOCES_DISPONIBLES = [
+            'Microsoft Raul - Spanish (Mexico)',          // Voz 0 - Masculina México
+            'Microsoft Sabina - Spanish (Mexico)',      // Voz 1 - Femenina México
+            'Google español',                            // Voz 2 - Google
+            'Google español de Estados Unidos',          // Voz 3 - Google Estados Unidos
+        ];
+        // ===== FIN CONFIGURACIÓN =====
+
+        // Función para obtener voces (con reintento si no están cargadas)
+        function getVoices() {
+            let voices = window.speechSynthesis.getVoices();
+            // Si no hay voces, esperar un momento y reintentar
+            if (voices.length === 0) {
+                // Forzar carga de voces
+                window.speechSynthesis.getVoices();
+                voices = window.speechSynthesis.getVoices();
+            }
+            return voices;
+        }
+
+        // Función para convertir texto a voz y reproducirlo
+        function speakText(text, stopButton) {
+            // Cancelar cualquier síntesis anterior
+            window.speechSynthesis.cancel();
+            
+            // Ocultar botón anterior si existe
+            if (stopAudioButton && stopAudioButton !== stopButton) {
+                stopAudioButton.style.display = 'none';
+            }
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'es-ES';
+            utterance.rate = 1.0; // Velocidad normal
+            utterance.pitch = 1.0; // Tono normal
+            utterance.volume = 1.0; // Volumen máximo
+            
+            // Obtener todas las voces disponibles
+            const voices = getVoices();
+            
+            // Filtrar solo voces en español
+            const vocesEspanol = voices.filter(voice => voice.lang.startsWith('es'));
+            
+            // Seleccionar la voz por índice directamente del array de voces en español
+            let selectedVoice = null;
+            if (VOZ_SELECCIONADA >= 0 && VOZ_SELECCIONADA < vocesEspanol.length) {
+                selectedVoice = vocesEspanol[VOZ_SELECCIONADA];
+                console.log(`Voz seleccionada (índice ${VOZ_SELECCIONADA}):`, selectedVoice.name);
+            } else {
+                // Si el índice no es válido, usar la primera voz en español
+                if (vocesEspanol.length > 0) {
+                    selectedVoice = vocesEspanol[0];
+                    console.warn(`Índice ${VOZ_SELECCIONADA} inválido. Usando primera voz disponible:`, selectedVoice.name);
+                } else {
+                    console.warn('No hay voces en español disponibles');
+                }
+            }
+            
+            // Debug: mostrar todas las voces en español disponibles con sus índices
+            console.log('Voces en español disponibles:');
+            vocesEspanol.forEach((voz, index) => {
+                console.log(`  [${index}] ${voz.name}`);
+            });
+            
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            }
+            
+            // Mostrar botón de pausa cuando empieza a reproducir
+            if (stopButton) {
+                stopButton.style.display = 'inline-flex';
+            }
+            
+            // Eventos para ocultar el botón cuando termine o se cancele
+            utterance.onend = () => {
+                if (stopButton) {
+                    stopButton.style.display = 'none';
+                }
+                currentAudioMessageDiv = null;
+            };
+            
+            utterance.onerror = () => {
+                if (stopButton) {
+                    stopButton.style.display = 'none';
+                }
+                currentAudioMessageDiv = null;
+            };
+            
+            // Reproducir
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Función para mostrar indicador de carga
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot-message typing-indicator';
+            typingDiv.id = 'typingIndicator';
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+            
+            typingDiv.appendChild(messageContent);
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Función para remover indicador de carga
+        function removeTypingIndicator() {
+            const typingIndicator = document.getElementById('typingIndicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        // Función para iniciar grabación con Web Speech API
+        function startRecording() {
+            // Verificar si el navegador soporta Web Speech API
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Tu navegador no soporta reconocimiento de voz. Por favor, usa Chrome, Edge o Safari.');
+                return;
+            }
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.lang = 'es-ES';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            
+            recordButton.style.display = 'none';
+            recordingStatus.style.display = 'flex';
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            
+            recognition.onstart = () => {
+                isRecording = true;
+            };
+            
+            recognition.onresult = async (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log("TRANSCRIPT: ");
+                console.log(transcript);
+                if (transcript.trim()) {
+                    // Agregar mensaje del usuario con el texto transcrito
+                    addMessage(transcript, true);
+                    
+                    // Enviar pregunta al chat (sin audio)
+                    await sendChatMessage(transcript, false);
+                }
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Error en reconocimiento de voz:', event.error);
+                let errorMsg = 'Error en el reconocimiento de voz.';
+                if (event.error === 'no-speech') {
+                    errorMsg = 'No se detectó habla. Intenta de nuevo.';
+                } else if (event.error === 'not-allowed') {
+                    errorMsg = 'Permiso de micrófono denegado.';
+                }
+                addMessage(errorMsg, false);
+                stopRecording();
+            };
+            
+            recognition.onend = () => {
+                stopRecording();
+            };
+            
+            recognition.start();
+            
+            // Guardar referencia para poder detenerla
+            window.currentRecognition = recognition;
+        }
+        
+        // Función para detener grabación
+        function stopRecording() {
+            if (window.currentRecognition && isRecording) {
+                window.currentRecognition.stop();
+            }
+            isRecording = false;
+            recordButton.style.display = 'flex';
+            recordingStatus.style.display = 'none';
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            userInput.focus();
+        }
+        
+        // Función para enviar mensaje al chat
+        async function sendChatMessage(question, generateAudio = false) {
+            // Deshabilitar input mientras se procesa
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            recordButton.disabled = true;
+            
+            // Mostrar indicador de escritura
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        question: question
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Remover indicador de escritura
+                removeTypingIndicator();
+                
+                if (response.ok) {
+                    addMessage(data.answer, false);
+                } else {
+                    addMessage('Error: ' + (data.error || 'Algo salió mal'), false);
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage('Error de conexión: ' + error.message, false);
+            } finally {
+                // Rehabilitar input
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                recordButton.disabled = false;
+                userInput.focus();
+            }
+        }
+        
+        // Manejar envío del formulario
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const question = userInput.value.trim();
+            if (!question) return;
+            
+            // Agregar mensaje del usuario
+            addMessage(question, true);
+            userInput.value = '';
+            
+            // Enviar mensaje (sin audio)
+            await sendChatMessage(question, false);
+        });
+        
+        // Event listeners para grabación
+        recordButton.addEventListener('click', startRecording);
+        stopRecordingButton.addEventListener('click', stopRecording);
+        
+        // Cargar voces disponibles al iniciar (necesario para algunos navegadores)
+        if ('speechSynthesis' in window) {
+            // Algunos navegadores cargan las voces de forma asíncrona
+            window.speechSynthesis.onvoiceschanged = () => {
+                // Las voces están disponibles ahora
+            };
+            // Intentar cargar voces inmediatamente
+            window.speechSynthesis.getVoices();
+        }
+
+        // Focus automático en el input
+        userInput.focus();
+    </script>
+</body>
+</html>
+

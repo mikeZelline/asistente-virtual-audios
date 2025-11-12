@@ -1,0 +1,42 @@
+# Variables de Entorno
+.env
+.env.local
+.env.*.local
+*.env
+config.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# FAISS índices (se regeneran)
+faiss_index/
+*.index
+
+# Logs
+*.log
+output.log
+nohup.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Temporal
+tmp/
+temp/
+*.tmp
+
