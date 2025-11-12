@@ -256,52 +256,76 @@
         // Usa getUserMedia directamente para que el navegador muestre el diálogo de permisos
         async function requestMicrophonePermission() {
             try {
-                // Intentar usar la API moderna primero
+                // Intentar usar la API moderna - intentar directamente sin verificar primero
+                // Esto permite que el navegador muestre su diálogo de permisos
+                let getUserMediaFn = null;
+                
+                // Intentar obtener la función de getUserMedia de diferentes formas
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    getUserMediaFn = (constraints) => navigator.mediaDevices.getUserMedia(constraints);
+                } else if (navigator.getUserMedia) {
+                    // API legacy
+                    getUserMediaFn = (constraints) => {
+                        return new Promise((resolve, reject) => {
+                            navigator.getUserMedia(constraints, resolve, reject);
+                        });
+                    };
+                } else if (navigator.webkitGetUserMedia) {
+                    // Webkit legacy
+                    getUserMediaFn = (constraints) => {
+                        return new Promise((resolve, reject) => {
+                            navigator.webkitGetUserMedia(constraints, resolve, reject);
+                        });
+                    };
+                } else if (navigator.mozGetUserMedia) {
+                    // Mozilla legacy
+                    getUserMediaFn = (constraints) => {
+                        return new Promise((resolve, reject) => {
+                            navigator.mozGetUserMedia(constraints, resolve, reject);
+                        });
+                    };
+                }
+                
+                // Si encontramos alguna forma de getUserMedia, intentar usarla
+                if (getUserMediaFn) {
+                    const stream = await getUserMediaFn({ audio: true });
+                    // Detener el stream inmediatamente, solo queríamos verificar/solicitar el permiso
                     stream.getTracks().forEach(track => track.stop());
                     return true;
                 }
                 
-                // Fallback a la API legacy si está disponible
-                if (navigator.getUserMedia) {
-                    return new Promise((resolve, reject) => {
-                        navigator.getUserMedia({ audio: true }, 
-                            (stream) => {
-                                stream.getTracks().forEach(track => track.stop());
-                                resolve(true);
-                            },
-                            (error) => {
-                                reject(error);
-                            }
-                        );
-                    });
-                }
+                // Si llegamos aquí, realmente no hay soporte
+                throw new Error('getUserMedia no está disponible');
                 
-                // Si no hay ninguna API disponible
-                alert('Tu navegador no soporta acceso al micrófono. Por favor, usa un navegador moderno como Chrome, Edge o Firefox.');
-                return false;
             } catch (error) {
                 console.error('Error al solicitar permiso del micrófono:', error);
                 
-                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                // Verificar si es un error de tipo (API no disponible)
+                if (error.name === 'TypeError' || error.message === 'getUserMedia no está disponible') {
+                    // Puede ser que requiera HTTPS o que la API esté bloqueada
+                    const isSecure = window.location.protocol === 'https:' || 
+                                   window.location.hostname === 'localhost' || 
+                                   window.location.hostname === '127.0.0.1';
+                    if (!isSecure) {
+                        alert('El acceso al micrófono requiere una conexión segura (HTTPS) cuando se accede desde un servidor remoto. Por favor, contacta al administrador para configurar HTTPS en el servidor, o accede desde localhost para probar.');
+                    } else {
+                        alert('Tu navegador no soporta acceso al micrófono o está bloqueado. Por favor, verifica la configuración de tu navegador.');
+                    }
+                    return false;
+                } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
                     // El usuario denegó el permiso en el diálogo del navegador
                     alert('Se necesita permiso para usar el micrófono. Por favor, recarga la página y permite el acceso cuando se te solicite.');
                     return false;
                 } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
                     alert('No se encontró ningún micrófono. Por favor, conecta un micrófono e intenta de nuevo.');
                     return false;
-                } else if (error.name === 'NotSupportedError' || error.name === 'TypeError') {
-                    // Puede ser que requiera HTTPS
-                    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    if (!isSecure) {
-                        alert('El acceso al micrófono requiere una conexión segura (HTTPS). Por favor, contacta al administrador para configurar HTTPS en el servidor.');
-                    } else {
-                        alert('Error al acceder al micrófono. Por favor, verifica la configuración de tu navegador.');
-                    }
+                } else if (error.name === 'NotSupportedError') {
+                    alert('El acceso al micrófono no está soportado en este contexto. Por favor, verifica la configuración de tu navegador.');
                     return false;
                 } else {
-                    alert('Error al acceder al micrófono: ' + (error.message || error.name || 'Error desconocido'));
+                    // Error genérico - mostrar información del error
+                    console.error('Detalles del error:', error);
+                    alert('Error al acceder al micrófono. Por favor, verifica la configuración de tu navegador o contacta al administrador.');
                     return false;
                 }
             }
