@@ -1,5 +1,6 @@
 import os
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+import requests
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response
 from dotenv import load_dotenv
 
 # Cargar variables de entorno desde archivo .env (si existe)
@@ -8,6 +9,8 @@ load_dotenv('config.env')
 # Configura variables de entorno ANTES de los imports
 os.environ["USER_AGENT"] = os.getenv("USER_AGENT", "mi-usuario-personalizado/0.0.1")
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
+os.environ["ELEVENLABS_API_KEY"] = os.getenv("ELEVENLABS_API_KEY", "")
+os.environ["ELEVENLABS_VOICE_ID"] = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
 
 
@@ -241,6 +244,63 @@ def chat():
         return jsonify({
             'answer': final_state['answer']
         })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Endpoint para generar audio con Eleven Labs TTS
+@app.route('/tts', methods=['POST'])
+def text_to_speech():
+    if not session.get('logged_in') or \
+       not session.get('username') or \
+       session.get('session_token') != SESSION_TOKEN:
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    try:
+        data = request.get_json()
+        text = data.get('text', '').strip()
+        
+        if not text:
+            return jsonify({'error': 'Texto vacío'}), 400
+        
+        # Obtener configuración de Eleven Labs
+        api_key = os.getenv("ELEVENLABS_API_KEY")
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+        
+        if not api_key:
+            return jsonify({'error': 'API key de Eleven Labs no configurada'}), 500
+        
+        # Llamar a la API de Eleven Labs
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": api_key
+        }
+        
+        payload = {
+            "text": text,
+            "model_id": "eleven_multilingual_v2",  # Modelo gratuito multilingüe
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            # Retornar el audio como respuesta
+            return Response(
+                response.content,
+                mimetype='audio/mpeg',
+                headers={
+                    'Content-Disposition': 'inline; filename=audio.mp3'
+                }
+            )
+        else:
+            error_msg = response.json().get('detail', {}).get('message', 'Error desconocido') if response.headers.get('content-type', '').startswith('application/json') else 'Error al generar audio'
+            return jsonify({'error': f'Error de Eleven Labs: {error_msg}'}), response.status_code
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

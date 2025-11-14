@@ -105,7 +105,12 @@
                 stopAudioButton.style.display = 'none'; // Oculto inicialmente
                 
                 stopAudioButton.addEventListener('click', () => {
-                    window.speechSynthesis.cancel();
+                    // Detener audio de Eleven Labs
+                    if (currentAudio) {
+                        currentAudio.pause();
+                        currentAudio.currentTime = 0;
+                        currentAudio = null;
+                    }
                     if (stopAudioButton) {
                         stopAudioButton.style.display = 'none';
                     }
@@ -125,108 +130,91 @@
             // Scroll al final
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
-            // Si es mensaje del bot, reproducir audio automáticamente
-            if (!isUser && 'speechSynthesis' in window) {
+            // Si es mensaje del bot, reproducir audio automáticamente usando Eleven Labs
+            if (!isUser) {
                 speakText(message, stopAudioButton);
             }
         }
         
-        // ===== CONFIGURACIÓN DE VOZ =====
-        // Cambia este número (0, 1, 2, etc.) para seleccionar la voz
-        // Este número corresponde a la POSICIÓN en la lista de voces en español disponibles
-        const VOZ_SELECCIONADA = 1; // 0 = primera voz en español, 1 = segunda, etc.
-        
-        // Array de referencia (solo para documentación - no se usa en la selección)
-        // Las voces se seleccionan por índice directamente del navegador
-        const VOCES_DISPONIBLES = [
-            'Microsoft Raul - Spanish (Mexico)',          // Voz 0 - Masculina México
-            'Microsoft Sabina - Spanish (Mexico)',      // Voz 1 - Femenina México
-            'Google español',                            // Voz 2 - Google
-            'Google español de Estados Unidos',          // Voz 3 - Google Estados Unidos
-        ];
-        // ===== FIN CONFIGURACIÓN =====
+        // Variable global para el audio actual
+        let currentAudio = null;
 
-        // Función para obtener voces (con reintento si no están cargadas)
-        function getVoices() {
-            let voices = window.speechSynthesis.getVoices();
-            // Si no hay voces, esperar un momento y reintentar
-            if (voices.length === 0) {
-                // Forzar carga de voces
-                window.speechSynthesis.getVoices();
-                voices = window.speechSynthesis.getVoices();
+        // Función para convertir texto a voz usando Eleven Labs TTS
+        async function speakText(text, stopButton) {
+            // Detener audio anterior si existe
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
             }
-            return voices;
-        }
-
-        // Función para convertir texto a voz y reproducirlo
-        function speakText(text, stopButton) {
-            // Cancelar cualquier síntesis anterior
-            window.speechSynthesis.cancel();
             
             // Ocultar botón anterior si existe
             if (stopAudioButton && stopAudioButton !== stopButton) {
                 stopAudioButton.style.display = 'none';
             }
             
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'es-ES';
-            utterance.rate = 1.0; // Velocidad normal
-            utterance.pitch = 1.0; // Tono normal
-            utterance.volume = 1.0; // Volumen máximo
-            
-            // Obtener todas las voces disponibles
-            const voices = getVoices();
-            
-            // Filtrar solo voces en español
-            const vocesEspanol = voices.filter(voice => voice.lang.startsWith('es'));
-            
-            // Seleccionar la voz por índice directamente del array de voces en español
-            let selectedVoice = null;
-            if (VOZ_SELECCIONADA >= 0 && VOZ_SELECCIONADA < vocesEspanol.length) {
-                selectedVoice = vocesEspanol[VOZ_SELECCIONADA];
-                console.log(`Voz seleccionada (índice ${VOZ_SELECCIONADA}):`, selectedVoice.name);
-            } else {
-                // Si el índice no es válido, usar la primera voz en español
-                if (vocesEspanol.length > 0) {
-                    selectedVoice = vocesEspanol[0];
-                    console.warn(`Índice ${VOZ_SELECCIONADA} inválido. Usando primera voz disponible:`, selectedVoice.name);
-                } else {
-                    console.warn('No hay voces en español disponibles');
+            try {
+                // Mostrar botón de pausa
+                if (stopButton) {
+                    stopButton.style.display = 'inline-flex';
                 }
-            }
-            
-            // Debug: mostrar todas las voces en español disponibles con sus índices
-            console.log('Voces en español disponibles:');
-            vocesEspanol.forEach((voz, index) => {
-                console.log(`  [${index}] ${voz.name}`);
-            });
-            
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-            }
-            
-            // Mostrar botón de pausa cuando empieza a reproducir
-            if (stopButton) {
-                stopButton.style.display = 'inline-flex';
-            }
-            
-            // Eventos para ocultar el botón cuando termine o se cancele
-            utterance.onend = () => {
+                
+                // Llamar al endpoint de TTS
+                const response = await fetch('/tts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: text })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                    console.error('Error al generar audio:', errorData.error);
+                    if (stopButton) {
+                        stopButton.style.display = 'none';
+                    }
+                    return;
+                }
+                
+                // Obtener el audio como blob
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                // Crear elemento de audio
+                const audio = new Audio(audioUrl);
+                currentAudio = audio;
+                
+                // Eventos del audio
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    if (stopButton) {
+                        stopButton.style.display = 'none';
+                    }
+                    currentAudio = null;
+                    currentAudioMessageDiv = null;
+                };
+                
+                audio.onerror = () => {
+                    console.error('Error al reproducir audio');
+                    URL.revokeObjectURL(audioUrl);
+                    if (stopButton) {
+                        stopButton.style.display = 'none';
+                    }
+                    currentAudio = null;
+                    currentAudioMessageDiv = null;
+                };
+                
+                // Reproducir audio
+                await audio.play();
+                
+            } catch (error) {
+                console.error('Error al generar o reproducir audio:', error);
                 if (stopButton) {
                     stopButton.style.display = 'none';
                 }
-                currentAudioMessageDiv = null;
-            };
-            
-            utterance.onerror = () => {
-                if (stopButton) {
-                    stopButton.style.display = 'none';
-                }
-                currentAudioMessageDiv = null;
-            };
-            
-            // Reproducir
-            window.speechSynthesis.speak(utterance);
+                currentAudio = null;
+            }
         }
 
         // Función para mostrar indicador de carga
@@ -560,16 +548,6 @@
         recordButton.addEventListener('click', startRecording);
         stopRecordingButton.addEventListener('click', stopRecording);
         
-        // Cargar voces disponibles al iniciar (necesario para algunos navegadores)
-        if ('speechSynthesis' in window) {
-            // Algunos navegadores cargan las voces de forma asíncrona
-            window.speechSynthesis.onvoiceschanged = () => {
-                // Las voces están disponibles ahora
-            };
-            // Intentar cargar voces inmediatamente
-            window.speechSynthesis.getVoices();
-        }
-
         // Focus automático en el input
         userInput.focus();
     </script>
