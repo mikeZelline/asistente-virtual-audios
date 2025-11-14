@@ -366,6 +366,33 @@ body {
     }
 }
 
+/* Cargador en mensajes */
+.message-loader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #666;
+    font-size: 14px;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid #e0e0e0;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 /* Scrollbar personalizada */
 .chat-messages::-webkit-scrollbar {
     width: 6px;

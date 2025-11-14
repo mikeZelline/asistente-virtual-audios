@@ -135,12 +135,87 @@
                 speakText(message, stopAudioButton);
             }
         }
+
+        // Función para crear mensaje con cargador (donde aparecerá la respuesta)
+        function createLoadingMessage() {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            messageDiv.id = 'loadingMessage';
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            
+            // Cargador en lugar del texto
+            const loaderDiv = document.createElement('div');
+            loaderDiv.className = 'message-loader';
+            loaderDiv.innerHTML = '<div class="loading-spinner"></div><span>Generando respuesta...</span>';
+            messageContent.appendChild(loaderDiv);
+            
+            messageDiv.appendChild(messageContent);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            return messageDiv;
+        }
+
+        // Función para reemplazar cargador con texto
+        function replaceLoaderWithMessage(messageDiv, messageText, stopButton) {
+            const messageContent = messageDiv.querySelector('.message-content');
+            messageContent.innerHTML = ''; // Limpiar contenido
+            
+            // Contenedor para el texto
+            const textDiv = document.createElement('div');
+            textDiv.textContent = messageText;
+            messageContent.appendChild(textDiv);
+            
+            // Agregar controles de audio
+            if ('speechSynthesis' in window) {
+                const audioControlsDiv = document.createElement('div');
+                audioControlsDiv.className = 'audio-controls';
+                audioControlsDiv.style.marginTop = '8px';
+                audioControlsDiv.style.display = 'flex';
+                audioControlsDiv.style.alignItems = 'center';
+                audioControlsDiv.style.gap = '8px';
+                
+                stopAudioButton = stopButton || document.createElement('button');
+                stopAudioButton.className = 'stop-audio-button';
+                stopAudioButton.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                        <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+                        <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+                    </svg>
+                `;
+                stopAudioButton.title = 'Pausar audio';
+                stopAudioButton.style.display = 'none';
+                
+                stopAudioButton.addEventListener('click', () => {
+                    if (currentAudio) {
+                        currentAudio.pause();
+                        currentAudio.currentTime = 0;
+                        currentAudio = null;
+                    }
+                    if (stopAudioButton) {
+                        stopAudioButton.style.display = 'none';
+                    }
+                    currentAudioMessageDiv = null;
+                });
+                
+                audioControlsDiv.appendChild(stopAudioButton);
+                messageContent.appendChild(audioControlsDiv);
+                
+                currentAudioMessageDiv = messageDiv;
+            }
+        }
         
         // Variable global para el audio actual
         let currentAudio = null;
 
+        // Variable para almacenar el texto mientras se carga el audio
+        let pendingMessage = null;
+        let pendingMessageDiv = null;
+        
         // Función para convertir texto a voz usando Eleven Labs TTS
-        async function speakText(text, stopButton) {
+        async function speakText(text, stopButton, messageDiv = null) {
             // Detener audio anterior si existe
             if (currentAudio) {
                 currentAudio.pause();
@@ -153,12 +228,13 @@
                 stopAudioButton.style.display = 'none';
             }
             
+            // Guardar referencia al mensaje si se proporciona
+            if (messageDiv) {
+                pendingMessageDiv = messageDiv;
+                pendingMessage = text;
+            }
+            
             try {
-                // Mostrar botón de pausa
-                if (stopButton) {
-                    stopButton.style.display = 'inline-flex';
-                }
-                
                 // Llamar al endpoint de TTS
                 const response = await fetch('/tts', {
                     method: 'POST',
@@ -171,7 +247,13 @@
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
                     console.error('Error al generar audio:', errorData.error);
-                    if (stopButton) {
+                    
+                    // Si hay un mensaje pendiente, mostrar el texto aunque falle el audio
+                    if (pendingMessageDiv && pendingMessage) {
+                        replaceLoaderWithMessage(pendingMessageDiv, pendingMessage, stopButton);
+                        pendingMessage = null;
+                        pendingMessageDiv = null;
+                    } else if (stopButton) {
                         stopButton.style.display = 'none';
                     }
                     return;
@@ -184,6 +266,37 @@
                 // Crear elemento de audio
                 const audio = new Audio(audioUrl);
                 currentAudio = audio;
+                
+                // Esperar a que el audio esté completamente cargado
+                await new Promise((resolve, reject) => {
+                    audio.oncanplaythrough = resolve;
+                    audio.onerror = reject;
+                    
+                    // Timeout de seguridad
+                    setTimeout(() => {
+                        if (audio.readyState >= 3) { // HAVE_FUTURE_DATA o superior
+                            resolve();
+                        } else {
+                            reject(new Error('Timeout al cargar audio'));
+                        }
+                    }, 30000); // 30 segundos máximo
+                });
+                
+                // Audio listo - ahora mostrar el texto y reproducir
+                if (pendingMessageDiv && pendingMessage) {
+                    replaceLoaderWithMessage(pendingMessageDiv, pendingMessage, stopButton);
+                    // Obtener el botón actualizado después de reemplazar el cargador
+                    if (!stopButton) {
+                        stopButton = stopAudioButton;
+                    }
+                    pendingMessage = null;
+                    pendingMessageDiv = null;
+                }
+                
+                // Mostrar botón de pausa
+                if (stopButton) {
+                    stopButton.style.display = 'inline-flex';
+                }
                 
                 // Eventos del audio
                 audio.onended = () => {
@@ -210,7 +323,13 @@
                 
             } catch (error) {
                 console.error('Error al generar o reproducir audio:', error);
-                if (stopButton) {
+                
+                // Si hay un mensaje pendiente, mostrar el texto aunque falle el audio
+                if (pendingMessageDiv && pendingMessage) {
+                    replaceLoaderWithMessage(pendingMessageDiv, pendingMessage, stopButton);
+                    pendingMessage = null;
+                    pendingMessageDiv = null;
+                } else if (stopButton) {
                     stopButton.style.display = 'none';
                 }
                 currentAudio = null;
@@ -493,8 +612,11 @@
             sendButton.disabled = true;
             recordButton.disabled = true;
             
-            // Mostrar indicador de escritura
-            showTypingIndicator();
+            // Remover indicador de escritura anterior si existe
+            removeTypingIndicator();
+            
+            // Crear mensaje con cargador donde aparecerá la respuesta
+            const loadingMessageDiv = createLoadingMessage();
             
             try {
                 const response = await fetch('/chat', {
@@ -509,17 +631,16 @@
                 
                 const data = await response.json();
                 
-                // Remover indicador de escritura
-                removeTypingIndicator();
-                
                 if (response.ok) {
-                    addMessage(data.answer, false);
+                    // Generar audio y esperar a que esté listo antes de mostrar texto
+                    await speakText(data.answer, null, loadingMessageDiv);
                 } else {
-                    addMessage('Error: ' + (data.error || 'Algo salió mal'), false);
+                    // En caso de error, mostrar directamente
+                    replaceLoaderWithMessage(loadingMessageDiv, 'Error: ' + (data.error || 'Algo salió mal'), null);
                 }
             } catch (error) {
-                removeTypingIndicator();
-                addMessage('Error de conexión: ' + error.message, false);
+                // En caso de error de conexión, mostrar directamente
+                replaceLoaderWithMessage(loadingMessageDiv, 'Error de conexión: ' + error.message, null);
             } finally {
                 // Rehabilitar input
                 userInput.disabled = false;
