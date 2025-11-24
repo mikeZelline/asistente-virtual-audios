@@ -11,8 +11,8 @@
         <div class="chat-header">
             <div class="header-content">
                 <div>
-                    <h1>💬 Asistente Virtual de Contratación Pública</h1>
-                    <p>Tu asistente experto en SECOP y contratación pública colombiana</p>
+                    <h1>💬 Mentor comercial IBUX</h1>
+                    <p>Mentor comercial experto en ventas B2B con enfoque 3C y alto rendimiento.</p>
                 </div>
                 <a href="/logout" class="logout-button">Cerrar Sesión</a>
             </div>
@@ -21,7 +21,7 @@
         <div class="chat-messages" id="chatMessages">
             <div class="message bot-message">
                 <div class="message-content">
-                    ¡Hola! Soy tu asistente virtual especializado en contratación pública y el SECOP. Pregúntame lo que necesites saber.
+                    ¡Hola! Soy tu mentor comercial. Pregúntame lo que necesites saber.
                 </div>
             </div>
         </div>
@@ -71,6 +71,94 @@
         let currentAudioMessageDiv = null;
         let stopAudioButton = null;
 
+        // Función para convertir Markdown básico a HTML
+        function markdownToHtml(markdown) {
+            if (!markdown) return '';
+            
+            let html = markdown;
+            const lines = html.split('\n');
+            let result = [];
+            let inList = false;
+            let listItems = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Títulos
+                if (line.startsWith('### ')) {
+                    if (inList) {
+                        result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+                        listItems = [];
+                        inList = false;
+                    }
+                    result.push('<h3 style="font-size: 1.1em; font-weight: bold; margin-top: 16px; margin-bottom: 8px; color: #333;">' + line.substring(4) + '</h3>');
+                } else if (line.startsWith('## ')) {
+                    if (inList) {
+                        result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+                        listItems = [];
+                        inList = false;
+                    }
+                    result.push('<h2 style="font-size: 1.3em; font-weight: bold; margin-top: 20px; margin-bottom: 12px; color: #2c3e50;">' + line.substring(3) + '</h2>');
+                } else if (line.startsWith('# ')) {
+                    if (inList) {
+                        result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+                        listItems = [];
+                        inList = false;
+                    }
+                    result.push('<h1 style="font-size: 1.5em; font-weight: bold; margin-top: 24px; margin-bottom: 16px; color: #1a1a1a;">' + line.substring(2) + '</h1>');
+                }
+                // Listas con viñetas
+                else if (line.startsWith('- ') || line.startsWith('* ')) {
+                    if (!inList) inList = true;
+                    const itemText = line.substring(2);
+                    listItems.push('<li style="margin: 6px 0; padding-left: 8px;">' + formatInline(itemText) + '</li>');
+                }
+                // Listas numeradas
+                else if (/^\d+\.\s/.test(line)) {
+                    if (!inList) inList = true;
+                    const itemText = line.replace(/^\d+\.\s/, '');
+                    listItems.push('<li style="margin: 6px 0; padding-left: 8px;">' + formatInline(itemText) + '</li>');
+                }
+                // Línea vacía
+                else if (line === '') {
+                    if (inList) {
+                        result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+                        listItems = [];
+                        inList = false;
+                    }
+                    if (result.length > 0 && !result[result.length - 1].endsWith('</p>')) {
+                        result.push('<br>');
+                    }
+                }
+                // Párrafo normal
+                else {
+                    if (inList) {
+                        result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+                        listItems = [];
+                        inList = false;
+                    }
+                    result.push('<p style="margin: 12px 0; line-height: 1.6;">' + formatInline(line) + '</p>');
+                }
+            }
+            
+            // Cerrar lista si queda abierta
+            if (inList) {
+                result.push('<ul style="margin: 12px 0; padding-left: 24px; list-style-type: disc;">' + listItems.join('') + '</ul>');
+            }
+            
+            return result.join('');
+        }
+        
+        // Función auxiliar para formatear texto inline (negritas, cursivas)
+        function formatInline(text) {
+            let formatted = text;
+            // Negritas
+            formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: bold; color: #2c3e50;">$1</strong>');
+            // Cursivas
+            formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            return formatted;
+        }
+
         // Función para agregar mensaje al chat
         function addMessage(message, isUser = false) {
             const messageDiv = document.createElement('div');
@@ -79,9 +167,15 @@
             const messageContent = document.createElement('div');
             messageContent.className = 'message-content';
             
-            // Contenedor para el texto
+            // Contenedor para el texto (con soporte para Markdown)
             const textDiv = document.createElement('div');
-            textDiv.textContent = message;
+            textDiv.className = 'formatted-message';
+            textDiv.style.cssText = 'line-height: 1.6;';
+            if (isUser) {
+                textDiv.textContent = message; // Los mensajes del usuario sin formato
+            } else {
+                textDiv.innerHTML = markdownToHtml(message); // Los mensajes del bot con formato
+            }
             messageContent.appendChild(textDiv);
             
             // Si es mensaje del bot, agregar botón de pausa
@@ -131,9 +225,10 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
             // Si es mensaje del bot, reproducir audio automáticamente usando Eleven Labs
-            if (!isUser) {
-                speakText(message, stopAudioButton);
-            }
+            // DESACTIVADO: Por ahora solo mostrar texto, no convertir a voz
+            // if (!isUser) {
+            //     speakText(message, stopAudioButton);
+            // }
         }
 
         // Función para crear mensaje con cargador (donde aparecerá la respuesta)
@@ -163,9 +258,11 @@
             const messageContent = messageDiv.querySelector('.message-content');
             messageContent.innerHTML = ''; // Limpiar contenido
             
-            // Contenedor para el texto
+            // Contenedor para el texto (con soporte para Markdown)
             const textDiv = document.createElement('div');
-            textDiv.textContent = messageText;
+            textDiv.className = 'formatted-message';
+            textDiv.style.cssText = 'line-height: 1.6; color: #333;';
+            textDiv.innerHTML = markdownToHtml(messageText);
             messageContent.appendChild(textDiv);
             
             // Agregar controles de audio
@@ -633,7 +730,9 @@
                 
                 if (response.ok) {
                     // Generar audio y esperar a que esté listo antes de mostrar texto
-                    await speakText(data.answer, null, loadingMessageDiv);
+                    // DESACTIVADO: Por ahora solo mostrar texto, no convertir a voz
+                    // await speakText(data.answer, null, loadingMessageDiv);
+                    replaceLoaderWithMessage(loadingMessageDiv, data.answer, null);
                 } else {
                     // En caso de error, mostrar directamente
                     replaceLoaderWithMessage(loadingMessageDiv, 'Error: ' + (data.error || 'Algo salió mal'), null);
