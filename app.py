@@ -75,7 +75,7 @@ SESSION_TOKEN = os.urandom(16).hex()
 
 # Credenciales hardcoded
 USERS = {
-    'test': 'test'
+    'test': 'test123*'
 }
 
 # Variables globales para el sistema RAG
